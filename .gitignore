@@ -3,3 +3,8 @@
 
 # Ada Library Information
 *.ali
+/EPlayerServer2/bin/x64/Debug
+/EPlayerServer2/obj/x64/Debug
+/.vs/EPlayerServer2/FileContentIndex
+/.vs/EPlayerServer2/v17
+/readme
