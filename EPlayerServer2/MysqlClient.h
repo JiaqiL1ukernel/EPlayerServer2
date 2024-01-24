@@ -1,19 +1,21 @@
 #pragma once
-#include "DatabaseHelper.h"
+#pragma once
 #include "Public.h"
-#include "sqlite3/sqlite3.h"
+#include "DatabaseHelper.h"
+#include <mysql/mysql.h>
 
-class CSqlite3Client:public CDatabaseClient
+class CMysqlClient
+	:public CDatabaseClient
 {
 public:
-	CSqlite3Client(const CSqlite3Client&) = delete;
-	CSqlite3Client& operator=(const CSqlite3Client&) = delete;
+	CMysqlClient(const CMysqlClient&) = delete;
+	CMysqlClient& operator=(const CMysqlClient&) = delete;
 public:
-	CSqlite3Client() {
-		m_db = NULL;
-		m_stmt = NULL;
+	CMysqlClient() {
+		bzero(&m_db, sizeof(m_db));
+		m_bInit = false;
 	}
-	virtual ~CSqlite3Client() {
+	virtual ~CMysqlClient() {
 		Close();
 	}
 public:
@@ -31,33 +33,30 @@ public:
 	virtual int RollbackTransaction();
 	//关闭连接
 	virtual int Close();
-	//是否连接
+	//是否连接 true表示连接中 false表示未连接
 	virtual bool IsConnected()const;
 private:
-	static int ExecCallback(void* arg, int count, char** values, char** names);
-	int ExecCallback(Result& result, const _Table_& table, int count, char** values, char** names);
-private:
-	sqlite3_stmt* m_stmt;
-	sqlite3* m_db;
+	MYSQL m_db;
+	bool m_bInit;//默认是false 表示没有初始化 初始化之后，则为true，表示已经连接
 private:
 	class ExecParam {
 	public:
-		ExecParam(CSqlite3Client* obj, Result& result, const _Table_& table)
+		ExecParam(CMysqlClient* obj, Result& result, const _Table_& table)
 			:obj(obj), result(result), table(table)
 		{}
-		CSqlite3Client* obj;
+		CMysqlClient* obj;
 		Result& result;
 		const _Table_& table;
 	};
 };
 
-class _sqlite3_table_ :
+class _mysql_table_ :
 	public _Table_
 {
 public:
-	_sqlite3_table_() :_Table_() {}
-	_sqlite3_table_(const _sqlite3_table_& table);
-	virtual ~_sqlite3_table_() {}
+	_mysql_table_() :_Table_() {}
+	_mysql_table_(const _mysql_table_& table);
+	virtual ~_mysql_table_();
 	//返回创建的SQL语句
 	virtual Buffer Create();
 	//删除表
@@ -68,25 +67,22 @@ public:
 	virtual Buffer Delete(const _Table_& values);
 	//TODO:参数进行优化
 	virtual Buffer Modify(const _Table_& values);
-	virtual Buffer Query(const Buffer& condition = "");
+	virtual Buffer Query(const Buffer& condition="");
 	//创建一个基于表的对象
 	virtual PTable Copy()const;
 	virtual void ClearFieldUsed();
-
 public:
 	//获取表的全名
 	virtual operator const Buffer() const;
 };
 
-
-
-class _sqlite3_field_ :
+class _mysql_field_ :
 	public _Field_
 {
 public:
-	_sqlite3_field_();
-	_sqlite3_field_(
-		SqlType ntype,
+	_mysql_field_();
+	_mysql_field_(
+		int ntype,
 		const Buffer& name,
 		unsigned attr,
 		const Buffer& type,
@@ -94,8 +90,8 @@ public:
 		const Buffer& default_,
 		const Buffer& check
 	);
-	_sqlite3_field_(const _sqlite3_field_&);
-	virtual ~_sqlite3_field_();
+	_mysql_field_(const _mysql_field_& field);
+	virtual ~_mysql_field_();
 	virtual Buffer Create();
 	virtual void LoadFromStr(const Buffer& str);
 	//where 语句使用的
@@ -103,9 +99,17 @@ public:
 	virtual Buffer toSqlStr() const;
 	//列的全名
 	virtual operator const Buffer() const;
-
 private:
-	Buffer Str2Hex(const Buffer& data);
-
+	Buffer Str2Hex(const Buffer& data) const;
+	
 };
 
+#define DECLARE_TABLE_CLASS(name, base) class name:public base { \
+public: \
+virtual PTable Copy() const {return PTable(new name(*this));} \
+name():base(){Name=#name;
+
+#define DECLARE_MYSQL_FIELD(ntype,name,attr,type,size,default_,check) \
+{PField field(new _mysql_field_(ntype, #name, attr, type, size, default_, check));FieldDefine.push_back(field);Fields[#name] = field; }
+
+#define DECLARE_TABLE_CLASS_EDN() }};

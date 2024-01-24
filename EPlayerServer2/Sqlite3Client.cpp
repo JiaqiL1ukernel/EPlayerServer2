@@ -19,8 +19,8 @@ int CSqlite3Client::Exec(const Buffer& sql)
     if (m_db == NULL) return -1;
     int ret = sqlite3_exec(m_db, sql, NULL, this, NULL);
     if (ret != SQLITE_OK) {
-        TRACEE("sql:{%s}", (char*)sql);
-		TRACEE("exec failed:%d [%s]", ret, sqlite3_errmsg(m_db));
+        printf("sql:{%s}\n", (char*)sql);
+		printf("exec failed:%d [%s]\n", ret, sqlite3_errmsg(m_db));
 		return -2;
     }
 
@@ -34,8 +34,8 @@ int CSqlite3Client::Exec(const Buffer& sql, Result& result, const _Table_& table
     ExecParam param(this, result, table);
     int ret = sqlite3_exec(m_db, sql, &CSqlite3Client::ExecCallback,(void*)&param, &errMsg);
 	if (ret != SQLITE_OK) {
-		TRACEE("sql:{%s}", (char*)sql);
-		TRACEE("exec failed:%d [%s]", ret, errMsg);
+		printf("sql:{%s}\n", (char*)sql);
+		printf("exec failed:%d [%s]\n", ret, errMsg);
         if (errMsg) free(errMsg);
 		return -2;
 	}
@@ -97,15 +97,15 @@ bool CSqlite3Client::IsConnected() const
 }
 
 
-int CSqlite3Client::ExecCallback(void* arg, int count, char** names, char** values)
+int CSqlite3Client::ExecCallback(void* arg, int count, char** values, char** names)
 {
     ExecParam* param = (ExecParam*)arg;
     return param->obj->ExecCallback(param->result, param->table,
-        count, names, values);
+        count, values, names);
     
 }
 
-int CSqlite3Client::ExecCallback(Result& result, const _Table_& table, int count, char** names, char** values)
+int CSqlite3Client::ExecCallback(Result& result, const _Table_& table, int count, char** values, char** names)
 {
     PTable pTable = table.Copy();
     if (pTable == nullptr) {
@@ -215,7 +215,7 @@ Buffer _sqlite3_table_::Modify(const _Table_& values)
                 Condition += ",";
 			}
 			else isFirts = false;
-            Condition += (Buffer)*values.FieldDefine[i] + " = ";
+            Condition += (Buffer)*values.FieldDefine[i] + "=";
             Condition += values.FieldDefine[i]->toSqlStr();
 		}
 	}
@@ -242,14 +242,17 @@ Buffer _sqlite3_table_::Modify(const _Table_& values)
 	return sql;
 }
 
-Buffer _sqlite3_table_::Query()
+Buffer _sqlite3_table_::Query(const Buffer& condition)
 {
     Buffer sql = "SELECT ";
     for (size_t i = 0; i < FieldDefine.size(); ++i) {
 		if (i > 0) sql += ",";
-		sql += '"'+(Buffer)*FieldDefine[i]+"\" ";
+		sql += (Buffer)*FieldDefine[i]+" ";
     }
-    sql += " FROM " + (Buffer)*this +";";
+    sql += " FROM " + (Buffer)*this;
+	if (condition.size() > 0) {
+		sql += " WHERE " + condition + ";";
+	}
 	TRACEI("sql = %s", (char*)sql);
     return sql;
 }
@@ -274,6 +277,69 @@ _sqlite3_table_::operator const Buffer() const
     }
     return Head + '"' + Name + '"';
 
+}
+
+_sqlite3_field_::_sqlite3_field_()
+	:_Field_() {
+	nType = TYPE_NULL;
+	Value.Double = 0.0;
+}
+
+_sqlite3_field_::_sqlite3_field_(SqlType ntype, const Buffer& name, unsigned attr, const Buffer& type, const Buffer& size, const Buffer& default_, const Buffer& check)
+{
+	nType = ntype;
+	switch (ntype)
+	{
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+	case TYPE_BLOB:
+		Value.String = new Buffer();
+		break;
+	}
+
+	Name = name;
+	Attr = attr;
+	Type = type;
+	Size = size;
+	Default = default_;
+	Check = check;
+}
+
+_sqlite3_field_::_sqlite3_field_(const _sqlite3_field_& field)
+{
+	Name = field.Name;
+	Type = field.Type;
+	Size = field.Size;
+	Attr = field.Attr;
+	Default = field.Default;
+	Check = field.Check;
+	Condition = field.Condition;
+	nType = field.nType;
+	switch (nType)
+	{
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+	case TYPE_BLOB:
+		Value.String = new Buffer();
+		*Value.String = *field.Value.String;
+		break;
+	}
+}
+
+_sqlite3_field_::~_sqlite3_field_()
+{
+	switch (nType)
+	{
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+	case TYPE_BLOB:
+		if (Value.String) {
+			Buffer* p = Value.String;
+			Value.String = NULL;
+			delete p;
+		}
+		break;
+	}
 }
 
 Buffer _sqlite3_field_::Create()
@@ -302,18 +368,103 @@ Buffer _sqlite3_field_::Create()
 
 void _sqlite3_field_::LoadFromStr(const Buffer& str)
 {
+	switch (nType)
+	{
+	case TYPE_NULL:
+		break;
+	case TYPE_BOOL:
+	case TYPE_INT:
+	case TYPE_DATETIME:
+		Value.Integer = atoi(str);
+		break;
+	case TYPE_REAL:
+		Value.Double = atof(str);
+		break;
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+		*Value.String = str;
+		break;
+	case TYPE_BLOB:
+		*Value.String = Str2Hex(str);
+		break;
+	default:
+		TRACEW("type=%d", nType);
+		break;
+	}
 }
 
 Buffer _sqlite3_field_::toEqualExp() const
 {
-    return Buffer();
+	Buffer sql = (Buffer)*this + " = ";
+	std::stringstream ss;
+	switch (nType)
+	{
+	case TYPE_NULL:
+		sql += " NULL ";
+		break;
+	case TYPE_BOOL:
+	case TYPE_INT:
+	case TYPE_DATETIME:
+		ss << Value.Integer;
+		sql += ss.str() + " ";
+		break;
+	case TYPE_REAL:
+		ss << Value.Double;
+		sql += ss.str() + " ";
+		break;
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+	case TYPE_BLOB:
+		sql += '"' + *Value.String + "\" ";
+		break;
+	default:
+		TRACEW("type=%d", nType);
+		break;
+	}
+	return sql;
 }
 
 Buffer _sqlite3_field_::toSqlStr() const
 {
-    return Buffer();
+	Buffer sql = "";
+	std::stringstream ss;
+	switch (nType)
+	{
+	case TYPE_NULL:
+		sql += " NULL ";
+		break;
+	case TYPE_BOOL:
+	case TYPE_INT:
+	case TYPE_DATETIME:
+		ss << Value.Integer;
+		sql += ss.str() + " ";
+		break;
+	case TYPE_REAL:
+		ss << Value.Double;
+		sql += ss.str() + " ";
+		break;
+	case TYPE_VARCHAR:
+	case TYPE_TEXT:
+	case TYPE_BLOB:
+		sql += '"' + *Value.String + "\" ";
+		break;
+	default:
+		TRACEW("type=%d", nType);
+		break;
+	}
+	return sql;
 }
 
 _sqlite3_field_::operator const Buffer() const
 {
+	return '"' + Name + '"';
+}
+
+Buffer _sqlite3_field_::Str2Hex(const Buffer& data)
+{
+	const char* hex = "0123456789ABCDEF";
+	std::stringstream ss;
+	for (auto ch : data)
+		ss << hex[(unsigned char)ch >> 4] << hex[(unsigned char)ch & 0xF];
+	return ss.str();
 }

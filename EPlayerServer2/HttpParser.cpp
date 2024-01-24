@@ -180,7 +180,7 @@ int UrlParser::Parser()
 	}
 	else {
 		m_host = Buffer(pos, target);
-		if (target+1 == value + value.size()) return -4;
+		if (target+1 == (char*)value + value.size()) return -4;
 		m_port = atoi(Buffer(target+1, pos + value.size()));
 	}
 	pos += value.size()+1;

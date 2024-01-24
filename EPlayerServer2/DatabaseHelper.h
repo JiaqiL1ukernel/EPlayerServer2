@@ -7,7 +7,7 @@
 
 enum {
 	SQL_INSERT = 1,
-	SQL_MODIFY = 2,
+	SQL_MODIFY = 2, 
 	SQL_CONDITION = 4
 };
 
@@ -56,7 +56,7 @@ public:
 	virtual Buffer Delete(const _Table_& values) = 0;
 	//TODO:参数进行优化
 	virtual Buffer Modify(const _Table_& values) = 0;
-	virtual Buffer Query() = 0;
+	virtual Buffer Query(const Buffer& condition="") = 0;
 	//创建一个基于表的对象
 	virtual PTable Copy()const = 0;
 	virtual void ClearFieldUsed() = 0;
@@ -73,6 +73,7 @@ public:
 
 
 enum {
+	NONE = 0,
 	NOT_NULL = 1,
 	DEFAULT = 2,
 	UNIQUE = 4,
@@ -131,6 +132,21 @@ public:
 	Buffer Default;
 	Buffer Check;
 	unsigned Condition;
-
+	union {
+		bool Bool;
+		int Integer;
+		double Double;
+		Buffer* String;
+	}Value;
+	int nType;
 };
 
+#define DECLARE_TABLE_CLASS(name, base) class name:public base { \
+public: \
+virtual PTable Copy() const {return PTable(new name(*this));} \
+name():base(){Name=#name;
+
+#define DECLARE_FIELD(ntype,name,attr,type,size,default_,check) \
+{PField field(new _sqlite3_field_(ntype, #name, attr, type, size, default_, check));FieldDefine.push_back(field);Fields[#name] = field; }
+
+#define DECLARE_TABLE_CLASS_EDN() }};

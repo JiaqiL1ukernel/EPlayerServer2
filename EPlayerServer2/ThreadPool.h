@@ -32,7 +32,7 @@ public:
 
 	int Start(unsigned count) {
 		if (m_server != NULL) return -1;
-		if (m_path == NULL) return -2;
+		if ((char*)m_path == NULL) return -2;
 		m_server = new CSocket();
 		if (m_server == NULL) return -3;
 		int ret = m_server->Init(CSockParam(m_path, SOCK_ISSERVER));
@@ -78,7 +78,7 @@ public:
 		if (base == NULL) return -3;
 		Buffer data(sizeof(base));
 		memcpy((char*)data, &base, sizeof(base));
-		if (data == NULL) return -4;
+		if ((char*)data == NULL) return -4;
 		ret = client.Send(data);
 		printf("%s<%d>:%s ret=%d\n", __FILE__, __LINE__, __FUNCTION__, ret);
 		if (ret != 0) {
